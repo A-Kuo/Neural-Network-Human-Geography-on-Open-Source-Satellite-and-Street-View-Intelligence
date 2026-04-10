@@ -108,7 +108,13 @@ def nearest_stop_distances(
                              "nearest_stop_type": None})
             continue
 
-        nearest_stop = stops_proj.iloc[candidate_idxs[0]]
+        # Guard: candidate_idxs may contain positional integers (rtree) or geometry ids
+        idx = candidate_idxs[0]
+        if idx >= len(stops_proj):
+            records.append({"tract_id": row["tract_id"], "nearest_stop_dist_km": np.nan,
+                             "nearest_stop_type": None})
+            continue
+        nearest_stop = stops_proj.iloc[idx]
         dist_m = centroid.distance(nearest_stop.geometry)
         records.append({
             "tract_id": row["tract_id"],

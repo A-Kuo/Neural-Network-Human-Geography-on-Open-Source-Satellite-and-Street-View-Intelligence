@@ -1,0 +1,169 @@
+# config.yaml — Central configuration for all pipeline parameters.
+# All scripts read from this file; no magic numbers or paths are hardcoded.
+# Override individual values via CLI flags or environment variables.
+
+# ── Geographic scope ──────────────────────────────────────────────────────────
+region:
+  name: "Chicago, IL (Cook County)"
+  state_fips: "17"
+  county_fips: "031"
+  bbox:
+    north: 42.023
+    south: 41.644
+    east: -87.524
+    west: -87.940
+  loop_lat: 41.8827        # Chicago Loop centroid
+  loop_lon: -87.6278
+  utm_crs: "EPSG:32616"   # UTM Zone 16N (meters)
+  wgs84_crs: "EPSG:4326"
+
+# ── Data directories ──────────────────────────────────────────────────────────
+paths:
+  raw: "data/raw"
+  processed: "data/processed"
+  audit: "data/audit"
+  figures: "figures"
+  models: "models"
+  logs: "logs"
+
+  # Raw layer paths
+  osm_buildings: "data/raw/osm_buildings.geojson"
+  osm_streets: "data/raw/osm_streets.graphml"
+  osm_transit_stops: "data/raw/osm_transit_stops.geojson"
+  gtfs_dir: "data/raw/gtfs"
+  gtfs_all_stops: "data/raw/gtfs/all_transit_stops.geojson"
+  census_dir: "data/raw/census"
+  streetview_dir: "data/raw/streetview"
+  image_features_dir: "data/processed/image_features"
+
+  # Processed layer paths
+  tract_centroids: "data/processed/tract_centroids.geojson"
+  tract_building_stats: "data/processed/tract_building_stats.parquet"
+  tract_transit_features: "data/processed/tract_transit_features.parquet"
+  tract_image_features: "data/processed/tract_image_features.parquet"
+  final_dataset: "data/processed/final_dataset.parquet"
+
+  # Audit outputs
+  streetview_coverage_audit: "data/audit/streetview_coverage.csv"
+  streetview_image_log: "data/audit/streetview_image_log.csv"
+  feature_extraction_log: "data/audit/feature_extraction_log.csv"
+  osm_coverage_audit: "data/audit/osm_coverage_audit.csv"
+  transit_coverage_audit: "data/audit/transit_coverage_audit.csv"
+  build_transform_log: "data/audit/build_dataset_transform_log.csv"
+
+# ── Census / ACS ──────────────────────────────────────────────────────────────
+census:
+  acs_year: 2022
+  acs_vintage: "acs5"     # 5-year estimates
+  api_base_url: "https://api.census.gov/data"
+  tiger_base_url: "https://www2.census.gov/geo/tiger"
+  variables:
+    median_household_income: "B19013_001E"
+    total_population: "B01003_001E"
+    total_housing_units: "B25001_001E"
+    households_total_vehicles: "B08201_001E"
+    households_no_vehicle: "B08201_002E"
+    poverty_universe: "B17001_001E"
+    poverty_below_line: "B17001_002E"
+    education_universe: "B15003_001E"
+    bachelors_degree: "B15003_022E"
+    masters_degree: "B15003_023E"
+    doctorate_degree: "B15003_025E"
+
+# ── Street View ───────────────────────────────────────────────────────────────
+streetview:
+  api_base_url: "https://maps.googleapis.com/maps/api/streetview"
+  metadata_url: "https://maps.googleapis.com/maps/api/streetview/metadata"
+  headings: [0, 90, 180, 270]   # N, E, S, W
+  pitch: 0
+  fov: 90
+  image_size: "640x640"
+  requests_per_second: 1        # API rate limit (free tier)
+  images_per_tract_target: 30
+  min_images_for_coverage: 10   # Below this → tract flagged as sparse
+  location_radius_m: 50         # Search radius for imagery availability
+
+# ── OpenStreetMap ─────────────────────────────────────────────────────────────
+osm:
+  overpass_url: "https://overpass-api.de/api/interpreter"
+  overpass_timeout_s: 120
+  network_type: "all"           # osmnx: all streets, paths, pedestrian
+  simplify_graph: true
+
+# ── GTFS / Transit ────────────────────────────────────────────────────────────
+gtfs:
+  sources:
+    cta: "https://www.transitchicago.com/downloads/sch_data/google_transit.zip"
+    metra: "https://www.metrarail.com/content/dam/metra/documents/GTFS.zip"
+  walk_speed_kmh: 5.0
+  max_travel_time_min: 120      # Cap for normalization
+  loop_stop_radius_m: 600       # Radius to identify Loop-area stops
+
+# ── Transit accessibility radii ───────────────────────────────────────────────
+transit:
+  radius_500m: 500
+  radius_1km: 1000
+  avg_hop_distance_km: 0.8      # Chicago tract → km per graph hop
+  transit_score_weights:
+    proximity: 40               # 40 pts for nearest stop distance
+    density: 30                 # 30 pts for stop count within 500m
+    travel_time: 30             # 30 pts for Loop travel time
+
+# ── Feature extraction ────────────────────────────────────────────────────────
+features:
+  resnet_model: "resnet152"
+  resnet_feature_dim: 2048
+  image_size: [224, 224]
+  imagenet_mean: [0.485, 0.456, 0.406]
+  imagenet_std: [0.229, 0.224, 0.225]
+  batch_size: 32
+  min_images_per_tract: 10      # Privacy: aggregate over >= 10 images
+
+# ── Privacy / ethics thresholds ───────────────────────────────────────────────
+privacy:
+  min_tract_population: 1000    # Warn if tract below this
+  min_samples_for_aggregation: 10
+  pii_column_patterns:
+    - "^lat(itude)?$"
+    - "^lon(gitude)?$"
+    - "address"
+    - "street_name"
+    - "household_id"
+    - "person_id"
+    - "name$"
+
+# ── Graph neural network ──────────────────────────────────────────────────────
+gnn:
+  hidden_dim: 64
+  depths: [1, 2, 3, 4, 5, 6]
+  learning_rate: 0.01
+  weight_decay: 1.0e-4
+  num_epochs: 200
+  patience: 20                  # Early stopping patience
+  dropout: 0.3
+  knn_k: 4                      # k-nearest neighbors for graph construction
+  spatial_adjacency: true       # Also add tract-touching edges
+  train_years: [2018, 2019, 2020, 2021, 2022, 2023]
+  test_year: 2024
+  val_fraction: 0.2
+  random_seed: 42
+
+# ── Synthetic task (Week 5) ───────────────────────────────────────────────────
+synthetic:
+  n_nodes: 50
+  graph_triangles: 3
+  num_hops: 5
+  income_scale: 100000.0
+  noise_std: 5000.0
+  num_node_features: 8
+  hidden_channels: 32
+  num_epochs: 100
+  num_trials: 3
+  seed: 42
+
+# ── Reproducibility ───────────────────────────────────────────────────────────
+reproducibility:
+  global_seed: 42
+  numpy_seed: 42
+  torch_seed: 42
+  deterministic_cudnn: true

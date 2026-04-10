@@ -25,6 +25,7 @@ Usage:
 """
 
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -47,7 +48,7 @@ COMMERCIAL_TAGS = {
 
 def classify_building(tag: str) -> str:
     """Map OSM building tag to coarse category."""
-    if not isinstance(tag, str):
+    if not isinstance(tag, str) or not tag:
         return "unknown"
     tag_lower = tag.lower()
     if tag_lower in RESIDENTIAL_TAGS:
@@ -140,7 +141,7 @@ def aggregate_to_tract(
             "total_footprint_area_m2": group["area_m2"].sum(),
         })
 
-    tract_stats = joined_gdf.groupby("tract_id").apply(_agg).reset_index()
+    tract_stats = joined_gdf.groupby("tract_id").apply(_agg, include_groups=False).reset_index()
 
     # Compute building density using land area
     tract_stats["land_area_km2"] = tract_stats["tract_id"].map(tract_areas)
@@ -216,9 +217,6 @@ def osm_coverage_audit(
 
 
 # ── Main ────────────────────────────────────────────────────────────────────────
-
-# Allow optional income_df for audit
-from typing import Optional
 
 
 def clean_all(
