@@ -26,12 +26,11 @@ import os
 from pathlib import Path
 from typing import Optional
 
-import requests
-import pandas as pd
 import geopandas as gpd
+import pandas as pd
+import requests
 from loguru import logger
 from tenacity import retry, stop_after_attempt, wait_exponential
-
 
 # ── ACS variable definitions ────────────────────────────────────────────────────
 
@@ -63,6 +62,7 @@ ACS_BASE_URL = "https://api.census.gov/data"
 
 # ── Census API fetcher ──────────────────────────────────────────────────────────
 
+
 @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=2, min=5, max=30))
 def _fetch_acs(
     variables: list[str],
@@ -71,10 +71,27 @@ def _fetch_acs(
     state: str = STATE_FIPS,
     county: str = COUNTY_FIPS,
 ) -> pd.DataFrame:
-    """
-    Fetch ACS 5-year estimates for all Cook County Census tracts.
+    """Fetch ACS 5-year estimates for all Cook County Census tracts.
 
-    Returns DataFrame with one row per tract.
+    Retrieves data from the US Census Bureau API for specified variables.
+    All data is publicly available at Census tract level (minimum ~4,000 people).
+    Retries automatically up to 4 times on network failures.
+
+    Args:
+        variables: List of ACS variable codes (e.g., ['B19013_001E', 'B01003_001E'])
+        year: ACS vintage year (e.g., 2022 for 2018-2022 estimates)
+        api_key: Census Bureau API key (free from census.gov/developers)
+        state: State FIPS code (default: '17' for Illinois)
+        county: County FIPS code (default: '031' for Cook County)
+
+    Returns:
+        DataFrame with one row per Census tract. Columns include variable codes
+        and geographic identifiers (state, county, tract). Column 'NAME' has
+        human-readable tract descriptions.
+
+    Raises:
+        requests.HTTPError: If API request fails after retries
+        ValueError: If API returns error status
     """
     var_string = "NAME," + ",".join(variables)
     url = f"{ACS_BASE_URL}/{year}/acs/acs5"
@@ -96,14 +113,33 @@ def _fetch_acs(
 
 
 def _clean_acs(df: pd.DataFrame, year: int) -> pd.DataFrame:
-    """
-    Clean and validate ACS data. Compute derived metrics.
+    """Clean and validate ACS data, computing derived metrics.
 
-    - Create standardized tract_id (11-digit FIPS: state + county + tract)
-    - Convert string columns to numeric
-    - Compute % metrics (poverty rate, vehicle-free rate, college rate)
-    - Document missing values
-    - Sentinel value: Census uses -666666666 for missing/N/A
+    Performs the following transformations:
+    - Creates standardized 11-digit tract_id (FIPS: state + county + tract)
+    - Converts string columns to numeric, replacing Census sentinel values with NaN
+    - Computes derived rates (poverty_rate, pct_no_vehicle, pct_college_plus)
+    - Handles division by zero safely
+
+    Sentinel values: Census Bureau uses -666666666 to indicate missing/not available data.
+    These are converted to NaN for safe downstream processing.
+
+    Args:
+        df: Raw DataFrame from Census API with string-valued columns
+        year: ACS vintage year (stored in acs_year column for reproducibility)
+
+    Returns:
+        Cleaned DataFrame with:
+        - tract_id: 11-digit FIPS code (e.g., '17031001100')
+        - All numeric variables converted to float64
+        - Computed rates: poverty_rate, pct_no_vehicle, pct_college_plus (range [0,1])
+        - acs_year: Year of estimate
+        - NAME: Tract description from Census
+
+    Notes:
+        - Missing values are preserved as NaN (not imputed)
+        - Rates are NaN if denominator is zero or missing
+        - For education: includes bachelor's + master's + doctorate degrees
     """
     df = df.copy()
 
@@ -141,7 +177,9 @@ def _clean_acs(df: pd.DataFrame, year: int) -> pd.DataFrame:
 
     # Final column selection
     keep_cols = [
-        "tract_id", "NAME", "acs_year",
+        "tract_id",
+        "NAME",
+        "acs_year",
         "median_household_income",
         "total_population",
         "total_housing_units",
@@ -164,12 +202,16 @@ def _audit_missing(df: pd.DataFrame) -> pd.DataFrame:
     for col in df.columns:
         n_missing = df[col].isna().sum()
         pct_missing = 100 * n_missing / total
-        audit_rows.append({
-            "column": col,
-            "n_missing": n_missing,
-            "pct_missing": round(pct_missing, 2),
-            "bias_flag": "HIGH" if pct_missing > 10 else ("MODERATE" if pct_missing > 5 else "OK"),
-        })
+        audit_rows.append(
+            {
+                "column": col,
+                "n_missing": n_missing,
+                "pct_missing": round(pct_missing, 2),
+                "bias_flag": (
+                    "HIGH" if pct_missing > 10 else ("MODERATE" if pct_missing > 5 else "OK")
+                ),
+            }
+        )
         if pct_missing > 10:
             logger.warning(f"  {col}: {pct_missing:.1f}% missing — flag for bias report")
         elif pct_missing > 0:
@@ -189,8 +231,7 @@ def fetch_chicago_tracts_shapefile(
     Source: US Census Bureau TIGER/Line Shapefiles (public domain).
     """
     tiger_url = (
-        f"https://www2.census.gov/geo/tiger/TIGER{year}/TRACT/"
-        f"tl_{year}_{STATE_FIPS}_tract.zip"
+        f"https://www2.census.gov/geo/tiger/TIGER{year}/TRACT/" f"tl_{year}_{STATE_FIPS}_tract.zip"
     )
     shapefile_path = output_dir / f"cook_county_tracts_{year}.geojson"
 
@@ -199,7 +240,9 @@ def fetch_chicago_tracts_shapefile(
         return gpd.read_file(shapefile_path)
 
     logger.info(f"Downloading TIGER tract geometries for Illinois ({year})...")
-    import io, zipfile
+    import io
+    import zipfile
+
     import requests as req
 
     resp = req.get(tiger_url, timeout=120)
@@ -227,6 +270,7 @@ def fetch_chicago_tracts_shapefile(
 
     # Cleanup temp files
     import shutil
+
     shutil.rmtree(output_dir / "tiger_tmp", ignore_errors=True)
 
     logger.info(f"Cook County tracts: {len(cook_tracts)} → {shapefile_path}")
@@ -234,6 +278,7 @@ def fetch_chicago_tracts_shapefile(
 
 
 # ── Main ────────────────────────────────────────────────────────────────────────
+
 
 def fetch_all(
     api_key: str,
@@ -293,12 +338,16 @@ def fetch_all(
     # Summary
     logger.info(f"\nACS Summary ({year}):")
     logger.info(f"  Tracts: {len(acs_df)}")
-    logger.info(f"  Median income range: "
-                f"${acs_df['median_household_income'].min():,.0f} – "
-                f"${acs_df['median_household_income'].max():,.0f}")
-    logger.info(f"  Poverty rate range: "
-                f"{100*acs_df['poverty_rate'].min():.1f}% – "
-                f"{100*acs_df['poverty_rate'].max():.1f}%")
+    logger.info(
+        f"  Median income range: "
+        f"${acs_df['median_household_income'].min():,.0f} – "
+        f"${acs_df['median_household_income'].max():,.0f}"
+    )
+    logger.info(
+        f"  Poverty rate range: "
+        f"{100*acs_df['poverty_rate'].min():.1f}% – "
+        f"{100*acs_df['poverty_rate'].max():.1f}%"
+    )
 
     return paths
 
@@ -307,7 +356,9 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Fetch Chicago ACS Census data")
-    parser.add_argument("--api-key", required=True, help="Census API key (from census.gov/developers)")
+    parser.add_argument(
+        "--api-key", required=True, help="Census API key (from census.gov/developers)"
+    )
     parser.add_argument("--year", type=int, default=2022, help="ACS 5-year estimate year")
     parser.add_argument("--output", default="data/raw/census/", help="Output directory")
     args = parser.parse_args()

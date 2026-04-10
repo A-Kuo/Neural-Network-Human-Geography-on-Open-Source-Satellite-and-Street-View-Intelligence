@@ -7,9 +7,10 @@ Expected: Only GNNs with depth >= k succeed.
 This validates Stone-Weierstrass theory before applying to real Chicago data.
 """
 
-import numpy as np
+from typing import Callable, Dict, Tuple
+
 import networkx as nx
-from typing import Dict, Callable, Tuple
+import numpy as np
 import torch
 import torch.nn as nn
 from torch_geometric.data import Data
@@ -60,11 +61,12 @@ def create_synthetic_income_function(
         hop_signal = np.zeros(n_nodes)
         for i, node in enumerate(graph.nodes()):
             neighbors_at_hop = [
-                other for other in graph.nodes()
+                other
+                for other in graph.nodes()
                 if shortest_paths.get(node, {}).get(other, np.inf) == hop
             ]
             if neighbors_at_hop:
-                hop_signal[i] = len(neighbors_at_hop) / (hop ** 1.5)
+                hop_signal[i] = len(neighbors_at_hop) / (hop**1.5)
         transit_signals[hop] = hop_signal
 
     # Income formula: combines local + multi-hop signals
@@ -144,10 +146,7 @@ def evaluate_gnn_on_synthetic_task(
     node_list = list(graph.nodes())
 
     # Create target tensor
-    y_true = torch.tensor(
-        target_fn.ground_truth,
-        dtype=torch.float32
-    ).unsqueeze(1).to(device)
+    y_true = torch.tensor(target_fn.ground_truth, dtype=torch.float32).unsqueeze(1).to(device)
 
     # Node features (dummy: random)
     x = torch.randn(n_nodes, 8, dtype=torch.float32).to(device)
@@ -155,11 +154,16 @@ def evaluate_gnn_on_synthetic_task(
     # Edge indices
     edge_list = list(graph.edges())
     if edge_list:
-        edge_index = torch.tensor(
-            [[node_list.index(u), node_list.index(v)] for u, v in edge_list] +
-            [[node_list.index(v), node_list.index(u)] for u, v in edge_list],
-            dtype=torch.long
-        ).t().contiguous().to(device)
+        edge_index = (
+            torch.tensor(
+                [[node_list.index(u), node_list.index(v)] for u, v in edge_list]
+                + [[node_list.index(v), node_list.index(u)] for u, v in edge_list],
+                dtype=torch.long,
+            )
+            .t()
+            .contiguous()
+            .to(device)
+        )
     else:
         edge_index = torch.zeros((2, 0), dtype=torch.long).to(device)
 

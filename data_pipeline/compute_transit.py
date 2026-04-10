@@ -47,28 +47,31 @@ Usage:
 from pathlib import Path
 from typing import Optional
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import geopandas as gpd
-from shapely.geometry import Point
 from loguru import logger
-
+from shapely.geometry import Point
 
 # ── Radius thresholds for multi-scale features ──────────────────────────────────
 
-RADIUS_500M = 500    # meters — reasonable walking distance
-RADIUS_1KM = 1000   # meters — extended walking / bike distance
+RADIUS_500M = 500  # meters — reasonable walking distance
+RADIUS_1KM = 1000  # meters — extended walking / bike distance
 
 # Rail stop types in OSM/GTFS (for has_rail_access feature)
 RAIL_STOP_TYPES = {
-    "subway_entrance", "station", "halt", "platform",
-    "stop_position",   # Metra/CTA heavy rail
+    "subway_entrance",
+    "station",
+    "halt",
+    "platform",
+    "stop_position",  # Metra/CTA heavy rail
 }
 
 # Travel time cap for normalization (2 hours max)
 MAX_TRAVEL_TIME_MIN = 120.0
 
 # ── Geometry helpers ─────────────────────────────────────────────────────────────
+
 
 def _project_to_utm(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Project GeoDataFrame to UTM Zone 16N (EPSG:32616) for meter-accurate distances."""
@@ -84,6 +87,7 @@ def compute_tract_centroids(tracts_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 
 # ── Core spatial computations ────────────────────────────────────────────────────
+
 
 def nearest_stop_distances(
     centroids_proj: gpd.GeoDataFrame,
@@ -104,23 +108,35 @@ def nearest_stop_distances(
         # Query spatial index for candidate nearest stops
         candidate_idxs = list(stop_sindex.nearest(centroid, num_results=1))
         if not candidate_idxs:
-            records.append({"tract_id": row["tract_id"], "nearest_stop_dist_km": np.nan,
-                             "nearest_stop_type": None})
+            records.append(
+                {
+                    "tract_id": row["tract_id"],
+                    "nearest_stop_dist_km": np.nan,
+                    "nearest_stop_type": None,
+                }
+            )
             continue
 
         # Guard: candidate_idxs may contain positional integers (rtree) or geometry ids
         idx = candidate_idxs[0]
         if idx >= len(stops_proj):
-            records.append({"tract_id": row["tract_id"], "nearest_stop_dist_km": np.nan,
-                             "nearest_stop_type": None})
+            records.append(
+                {
+                    "tract_id": row["tract_id"],
+                    "nearest_stop_dist_km": np.nan,
+                    "nearest_stop_type": None,
+                }
+            )
             continue
         nearest_stop = stops_proj.iloc[idx]
         dist_m = centroid.distance(nearest_stop.geometry)
-        records.append({
-            "tract_id": row["tract_id"],
-            "nearest_stop_dist_km": dist_m / 1000.0,
-            "nearest_stop_type": nearest_stop.get("stop_type", "unknown"),
-        })
+        records.append(
+            {
+                "tract_id": row["tract_id"],
+                "nearest_stop_dist_km": dist_m / 1000.0,
+                "nearest_stop_type": nearest_stop.get("stop_type", "unknown"),
+            }
+        )
 
     return pd.DataFrame(records)
 
@@ -150,21 +166,21 @@ def stops_within_radius(
         n_stops = len(nearby)
         has_rail = False
         if "stop_type" in nearby.columns:
-            has_rail = any(
-                str(t).lower() in RAIL_STOP_TYPES
-                for t in nearby["stop_type"].dropna()
-            )
+            has_rail = any(str(t).lower() in RAIL_STOP_TYPES for t in nearby["stop_type"].dropna())
 
-        records.append({
-            "tract_id": row["tract_id"],
-            f"n_stops_{int(radius_m)}m": n_stops,
-            "has_rail_access": has_rail,
-        })
+        records.append(
+            {
+                "tract_id": row["tract_id"],
+                f"n_stops_{int(radius_m)}m": n_stops,
+                "has_rail_access": has_rail,
+            }
+        )
 
     return pd.DataFrame(records)
 
 
 # ── Travel time aggregation ─────────────────────────────────────────────────────
+
 
 def assign_travel_times_to_tracts(
     centroids_proj: gpd.GeoDataFrame,
@@ -184,8 +200,9 @@ def assign_travel_times_to_tracts(
 
     if stops_with_tt_valid.empty:
         logger.warning("No valid travel times available. Using Euclidean distance fallback.")
-        return pd.DataFrame({"tract_id": centroids_proj["tract_id"],
-                             "median_travel_time_loop": np.nan})
+        return pd.DataFrame(
+            {"tract_id": centroids_proj["tract_id"], "median_travel_time_loop": np.nan}
+        )
 
     stop_sindex = stops_with_tt_valid.sindex
     records = []
@@ -206,22 +223,27 @@ def assign_travel_times_to_tracts(
             nearby = nearby[nearby.geometry.within(buffer5)]
 
         if nearby.empty:
-            records.append({
-                "tract_id": row["tract_id"],
-                "median_travel_time_loop": np.nan,
-                "min_travel_time_loop": np.nan,
-            })
+            records.append(
+                {
+                    "tract_id": row["tract_id"],
+                    "median_travel_time_loop": np.nan,
+                    "min_travel_time_loop": np.nan,
+                }
+            )
         else:
-            records.append({
-                "tract_id": row["tract_id"],
-                "median_travel_time_loop": nearby["travel_time_to_loop_min"].median(),
-                "min_travel_time_loop": nearby["travel_time_to_loop_min"].min(),
-            })
+            records.append(
+                {
+                    "tract_id": row["tract_id"],
+                    "median_travel_time_loop": nearby["travel_time_to_loop_min"].median(),
+                    "min_travel_time_loop": nearby["travel_time_to_loop_min"].min(),
+                }
+            )
 
     return pd.DataFrame(records)
 
 
 # ── Composite transit score ──────────────────────────────────────────────────────
+
 
 def compute_transit_score(df: pd.DataFrame) -> pd.Series:
     """
@@ -237,6 +259,7 @@ def compute_transit_score(df: pd.DataFrame) -> pd.Series:
     This score is NOT used directly as a label — it's an input feature.
     The GNN must LEARN which combination of these scales predicts economic outcomes.
     """
+
     def normalize_inverse(series: pd.Series, cap: float) -> pd.Series:
         """Normalize inverse (lower distance = higher score), cap at cap."""
         clipped = series.clip(upper=cap)
@@ -266,6 +289,7 @@ def compute_transit_score(df: pd.DataFrame) -> pd.Series:
 
 # ── Bias audit ──────────────────────────────────────────────────────────────────
 
+
 def transit_coverage_audit(
     tract_transit: pd.DataFrame,
     income_df: Optional[pd.DataFrame] = None,
@@ -284,8 +308,11 @@ def transit_coverage_audit(
         "pct_tracts_within_500m": (tract_transit["n_stops_500m"] > 0).mean() * 100,
     }
     for k, v in audit.items():
-        logger.info(f"  Transit audit — {k}: {v:.2f}" if isinstance(v, float) else
-                    f"  Transit audit — {k}: {v}")
+        logger.info(
+            f"  Transit audit — {k}: {v:.2f}"
+            if isinstance(v, float)
+            else f"  Transit audit — {k}: {v}"
+        )
 
     if income_df is not None:
         merged = tract_transit.merge(
@@ -304,6 +331,7 @@ def transit_coverage_audit(
 
 
 # ── Main ────────────────────────────────────────────────────────────────────────
+
 
 def compute_all(
     stops_path: str | Path,
@@ -353,28 +381,34 @@ def compute_all(
         travel_time_df = assign_travel_times_to_tracts(centroids, stops_proj, all_tt)
     else:
         logger.warning("No GTFS travel time data found. travel_time_loop will be NaN.")
-        travel_time_df = pd.DataFrame({
-            "tract_id": centroids["tract_id"],
-            "median_travel_time_loop": np.nan,
-            "min_travel_time_loop": np.nan,
-        })
+        travel_time_df = pd.DataFrame(
+            {
+                "tract_id": centroids["tract_id"],
+                "median_travel_time_loop": np.nan,
+                "min_travel_time_loop": np.nan,
+            }
+        )
 
     # Join all features
     result = (
-        nearest_df
-        .merge(stops_500m, on="tract_id", how="outer")
-        .merge(stops_1km[["tract_id", f"n_stops_{RADIUS_1KM}m", "has_rail_access_1km"]],
-               on="tract_id", how="outer")
+        nearest_df.merge(stops_500m, on="tract_id", how="outer")
+        .merge(
+            stops_1km[["tract_id", f"n_stops_{RADIUS_1KM}m", "has_rail_access_1km"]],
+            on="tract_id",
+            how="outer",
+        )
         .merge(travel_time_df, on="tract_id", how="outer")
     )
 
     # Rename for clarity
-    result = result.rename(columns={
-        f"n_stops_{RADIUS_500M}m": "n_stops_500m",
-        f"n_stops_{RADIUS_1KM}m": "n_stops_1km",
-        "has_rail_access": "has_rail_500m",
-        "has_rail_access_1km": "has_rail_1km",
-    })
+    result = result.rename(
+        columns={
+            f"n_stops_{RADIUS_500M}m": "n_stops_500m",
+            f"n_stops_{RADIUS_1KM}m": "n_stops_1km",
+            "has_rail_access": "has_rail_500m",
+            "has_rail_access_1km": "has_rail_1km",
+        }
+    )
 
     # Composite score
     result["transit_score"] = compute_transit_score(result)
@@ -405,7 +439,9 @@ if __name__ == "__main__":
     parser.add_argument("--tracts", default="data/raw/census/cook_county_tracts_2022.geojson")
     parser.add_argument("--output", default="data/processed/tract_transit_features.parquet")
     parser.add_argument("--cta-travel-times", default="data/raw/gtfs/cta/travel_times_to_loop.csv")
-    parser.add_argument("--metra-travel-times", default="data/raw/gtfs/metra/travel_times_to_loop.csv")
+    parser.add_argument(
+        "--metra-travel-times", default="data/raw/gtfs/metra/travel_times_to_loop.csv"
+    )
     parser.add_argument("--income", default=None)
     args = parser.parse_args()
 
@@ -417,6 +453,17 @@ if __name__ == "__main__":
         metra_travel_times_path=args.metra_travel_times,
         income_path=args.income,
     )
-    print(result[["tract_id", "nearest_stop_dist_km", "n_stops_500m",
-                  "has_rail_500m", "median_travel_time_loop",
-                  "transit_score"]].head(10).to_string())
+    print(
+        result[
+            [
+                "tract_id",
+                "nearest_stop_dist_km",
+                "n_stops_500m",
+                "has_rail_500m",
+                "median_travel_time_loop",
+                "transit_score",
+            ]
+        ]
+        .head(10)
+        .to_string()
+    )

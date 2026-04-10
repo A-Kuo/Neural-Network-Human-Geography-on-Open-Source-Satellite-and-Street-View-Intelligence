@@ -27,22 +27,36 @@ Usage:
 from pathlib import Path
 from typing import Optional
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import geopandas as gpd
 from loguru import logger
-
 
 # ── Building type categorization ────────────────────────────────────────────────
 
 RESIDENTIAL_TAGS = {
-    "residential", "house", "detached", "apartments", "apartment",
-    "dormitory", "terrace", "semidetached_house", "bungalow", "cabin",
+    "residential",
+    "house",
+    "detached",
+    "apartments",
+    "apartment",
+    "dormitory",
+    "terrace",
+    "semidetached_house",
+    "bungalow",
+    "cabin",
 }
 
 COMMERCIAL_TAGS = {
-    "commercial", "retail", "office", "supermarket", "shop",
-    "warehouse", "industrial", "civic", "government",
+    "commercial",
+    "retail",
+    "office",
+    "supermarket",
+    "shop",
+    "warehouse",
+    "industrial",
+    "civic",
+    "government",
 }
 
 
@@ -61,6 +75,7 @@ def classify_building(tag: str) -> str:
 
 
 # ── Geometry processing ─────────────────────────────────────────────────────────
+
 
 def compute_building_areas(buildings_gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """
@@ -110,6 +125,7 @@ def spatial_join_to_tracts(
 
 # ── Aggregation ─────────────────────────────────────────────────────────────────
 
+
 def aggregate_to_tract(
     joined_gdf: gpd.GeoDataFrame,
     tracts_gdf: gpd.GeoDataFrame,
@@ -130,16 +146,18 @@ def aggregate_to_tract(
 
     def _agg(group: pd.DataFrame) -> pd.Series:
         n = len(group)
-        return pd.Series({
-            "building_count": n,
-            "median_building_area_m2": group["area_m2"].median(),
-            "median_height_m": group["height_m"].median(),  # NaN if all missing
-            "pct_residential": (group["building_category"] == "residential").sum() / n,
-            "pct_commercial": (group["building_category"] == "commercial").sum() / n,
-            "pct_missing_height": group["height_m"].isna().sum() / n,
-            "mean_building_area_m2": group["area_m2"].mean(),
-            "total_footprint_area_m2": group["area_m2"].sum(),
-        })
+        return pd.Series(
+            {
+                "building_count": n,
+                "median_building_area_m2": group["area_m2"].median(),
+                "median_height_m": group["height_m"].median(),  # NaN if all missing
+                "pct_residential": (group["building_category"] == "residential").sum() / n,
+                "pct_commercial": (group["building_category"] == "commercial").sum() / n,
+                "pct_missing_height": group["height_m"].isna().sum() / n,
+                "mean_building_area_m2": group["area_m2"].mean(),
+                "total_footprint_area_m2": group["area_m2"].sum(),
+            }
+        )
 
     tract_stats = joined_gdf.groupby("tract_id").apply(_agg, include_groups=False).reset_index()
 
@@ -166,6 +184,7 @@ def aggregate_to_tract(
 
 # ── Bias audit for OSM coverage ─────────────────────────────────────────────────
 
+
 def osm_coverage_audit(
     tract_stats: pd.DataFrame,
     income_df: Optional[pd.DataFrame] = None,
@@ -188,18 +207,21 @@ def osm_coverage_audit(
     for col, label in metrics:
         if col not in tract_stats.columns:
             continue
-        audit_rows.append({
-            "metric": label,
-            "mean": tract_stats[col].mean(),
-            "std": tract_stats[col].std(),
-            "pct_missing": 100 * tract_stats[col].isna().mean(),
-        })
+        audit_rows.append(
+            {
+                "metric": label,
+                "mean": tract_stats[col].mean(),
+                "std": tract_stats[col].std(),
+                "pct_missing": 100 * tract_stats[col].isna().mean(),
+            }
+        )
 
     audit_df = pd.DataFrame(audit_rows)
 
     if income_df is not None:
-        merged = tract_stats.merge(income_df[["tract_id", "median_household_income"]],
-                                   on="tract_id", how="inner")
+        merged = tract_stats.merge(
+            income_df[["tract_id", "median_household_income"]], on="tract_id", how="inner"
+        )
         merged = merged.dropna(subset=["median_household_income"])
         for col, label in metrics:
             if col not in merged.columns:
@@ -210,8 +232,10 @@ def osm_coverage_audit(
                 logger.info(f"  OSM bias check — {label} × income: r={corr:.3f}")
                 # Flag if strongly correlated (possible wealth-based data density bias)
                 if abs(corr) > 0.3:
-                    logger.warning(f"  BIAS FLAG: {label} correlated with income (r={corr:.3f}). "
-                                   f"Document in ETHICS.md.")
+                    logger.warning(
+                        f"  BIAS FLAG: {label} correlated with income (r={corr:.3f}). "
+                        f"Document in ETHICS.md."
+                    )
 
     return audit_df
 
@@ -271,8 +295,9 @@ if __name__ == "__main__":
     parser.add_argument("--buildings", default="data/raw/osm_buildings.geojson")
     parser.add_argument("--tracts", default="data/raw/census/cook_county_tracts_2022.geojson")
     parser.add_argument("--output", default="data/processed/tract_building_stats.parquet")
-    parser.add_argument("--income", default=None,
-                        help="Optional ACS CSV for bias correlation check")
+    parser.add_argument(
+        "--income", default=None, help="Optional ACS CSV for bias correlation check"
+    )
     args = parser.parse_args()
 
     stats = clean_all(
@@ -282,5 +307,16 @@ if __name__ == "__main__":
         income_path=args.income,
     )
     print(f"\nDone. {len(stats)} tracts × {len(stats.columns)} features → {args.output}")
-    print(stats[["tract_id", "building_count", "building_density_km2",
-                 "median_height_m", "pct_residential"]].head(10).to_string())
+    print(
+        stats[
+            [
+                "tract_id",
+                "building_count",
+                "building_density_km2",
+                "median_height_m",
+                "pct_residential",
+            ]
+        ]
+        .head(10)
+        .to_string()
+    )

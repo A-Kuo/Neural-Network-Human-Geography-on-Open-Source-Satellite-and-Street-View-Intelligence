@@ -20,17 +20,16 @@ Usage:
     python fetch_gtfs.py --output data/raw/gtfs/
 """
 
-import zipfile
 import io
+import zipfile
 from pathlib import Path
 
-import requests
-import pandas as pd
 import geopandas as gpd
-from shapely.geometry import Point
+import pandas as pd
+import requests
 from loguru import logger
+from shapely.geometry import Point
 from tenacity import retry, stop_after_attempt, wait_exponential
-
 
 # ── Public GTFS URLs ────────────────────────────────────────────────────────────
 
@@ -48,6 +47,7 @@ WALK_SPEED_KMH = 5.0
 
 
 # ── Download helpers ────────────────────────────────────────────────────────────
+
 
 @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=2, min=5, max=60))
 def _download_gtfs_zip(url: str) -> dict[str, pd.DataFrame]:
@@ -95,8 +95,7 @@ def _validate_stops(stops_df: pd.DataFrame) -> pd.DataFrame:
     stops_df = stops_df.dropna(subset=["stop_lat", "stop_lon"])
     # Basic bounds check (Chicago area)
     stops_df = stops_df[
-        (stops_df["stop_lat"].between(41.5, 42.1)) &
-        (stops_df["stop_lon"].between(-88.0, -87.4))
+        (stops_df["stop_lat"].between(41.5, 42.1)) & (stops_df["stop_lon"].between(-88.0, -87.4))
     ]
     n_after = len(stops_df)
     if n_before != n_after:
@@ -107,8 +106,7 @@ def _validate_stops(stops_df: pd.DataFrame) -> pd.DataFrame:
 def _stops_to_geodataframe(stops_df: pd.DataFrame, agency: str) -> gpd.GeoDataFrame:
     """Convert stops DataFrame to GeoDataFrame with agency label."""
     stops_df = _validate_stops(stops_df)
-    geometry = [Point(lon, lat) for lat, lon in
-                zip(stops_df["stop_lat"], stops_df["stop_lon"])]
+    geometry = [Point(lon, lat) for lat, lon in zip(stops_df["stop_lat"], stops_df["stop_lon"])]
     gdf = gpd.GeoDataFrame(stops_df, geometry=geometry, crs="EPSG:4326")
     gdf["agency"] = agency
     cols = ["stop_id", "stop_name", "stop_lat", "stop_lon", "agency", "geometry"]
@@ -117,6 +115,7 @@ def _stops_to_geodataframe(stops_df: pd.DataFrame, agency: str) -> gpd.GeoDataFr
 
 
 # ── Travel time estimation ──────────────────────────────────────────────────────
+
 
 def estimate_travel_times_to_loop(
     stops_gdf: gpd.GeoDataFrame,
@@ -143,9 +142,7 @@ def estimate_travel_times_to_loop(
     stops_proj = stops_gdf.to_crs(epsg=32616)  # UTM Zone 16N for meters
     loop_pt_proj = gpd.GeoSeries([loop_pt], crs="EPSG:4326").to_crs(epsg=32616).iloc[0]
     stops_proj["dist_to_loop_m"] = stops_proj.geometry.distance(loop_pt_proj)
-    loop_stop_ids = set(
-        stops_proj[stops_proj["dist_to_loop_m"] < 600]["stop_id"].tolist()
-    )
+    loop_stop_ids = set(stops_proj[stops_proj["dist_to_loop_m"] < 600]["stop_id"].tolist())
 
     if not loop_stop_ids:
         logger.warning("No stops found near Chicago Loop — using Euclidean fallback.")
@@ -182,16 +179,13 @@ def estimate_travel_times_to_loop(
     # Keep only forward-in-time trips (positive travel time, <120 min)
     merged = merged[(merged["travel_time_min"] > 0) & (merged["travel_time_min"] < 120)]
 
-    travel_times = (
-        merged.groupby("stop_id")["travel_time_min"]
-        .median()
-        .reset_index()
-    )
+    travel_times = merged.groupby("stop_id")["travel_time_min"].median().reset_index()
     logger.info(f"Estimated travel times for {len(travel_times)} stops.")
     return travel_times
 
 
 # ── Main ────────────────────────────────────────────────────────────────────────
+
 
 def fetch_all_gtfs(output_dir: str | Path = "data/raw/gtfs/") -> dict[str, Path]:
     """
@@ -252,9 +246,7 @@ def fetch_all_gtfs(output_dir: str | Path = "data/raw/gtfs/") -> dict[str, Path]
 
     # Merge CTA + Metra into unified stops file
     if all_stops:
-        merged_stops = gpd.GeoDataFrame(
-            pd.concat(all_stops, ignore_index=True), crs="EPSG:4326"
-        )
+        merged_stops = gpd.GeoDataFrame(pd.concat(all_stops, ignore_index=True), crs="EPSG:4326")
         merged_path = output_dir / "all_transit_stops.geojson"
         merged_stops.to_file(merged_path, driver="GeoJSON")
         paths["all_stops"] = merged_path

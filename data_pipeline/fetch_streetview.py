@@ -16,22 +16,21 @@ Usage:
 Rate limit: 1 req/sec (Google Street View Static API free tier: 25k/month)
 """
 
+import hashlib
+import json
+import logging
 import os
 import time
-import json
-import hashlib
-import logging
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from dataclasses import dataclass, asdict
 from typing import Optional
 
-import requests
-import pandas as pd
 import geopandas as gpd
-from tenacity import retry, stop_after_attempt, wait_exponential
-from ratelimit import limits, sleep_and_retry
+import pandas as pd
+import requests
 from loguru import logger
-
+from ratelimit import limits, sleep_and_retry
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -40,38 +39,42 @@ METADATA_API_URL = "https://maps.googleapis.com/maps/api/streetview/metadata"
 
 # Headings to capture all cardinal directions per centroid location
 HEADINGS = [0, 90, 180, 270]  # N, E, S, W
-PITCH = 0       # horizontal view (not up/down)
-FOV = 90        # field of view in degrees
+PITCH = 0  # horizontal view (not up/down)
+FOV = 90  # field of view in degrees
 IMG_SIZE = "640x640"
-MIN_IMAGES_FOR_COVERAGE = 10   # tracts with fewer are "sparse"
+MIN_IMAGES_FOR_COVERAGE = 10  # tracts with fewer are "sparse"
 PREFERRED_IMAGES_PER_TRACT = 30  # 30 = 4 headings × ~7-8 sampling points
 
 # ── Data structures ─────────────────────────────────────────────────────────────
 
+
 @dataclass
 class ImageRecord:
     """Metadata for one fetched Street View image. No lat/lon stored."""
+
     tract_id: str
     image_index: int
     heading: int
     filename: str
     fetch_date: str
-    status: str          # "ok" | "no_imagery" | "error"
+    status: str  # "ok" | "no_imagery" | "error"
     pano_id: Optional[str] = None  # anonymized panorama ID
 
 
 @dataclass
 class TractCoverageRecord:
     """Coverage audit record per Census tract."""
+
     tract_id: str
     n_requested: int
     n_fetched: int
     n_no_imagery: int
     n_errors: int
-    coverage_flag: str   # "full" | "sparse" | "missing"
+    coverage_flag: str  # "full" | "sparse" | "missing"
 
 
 # ── Rate-limited API calls ──────────────────────────────────────────────────────
+
 
 @sleep_and_retry
 @limits(calls=1, period=1)
@@ -90,7 +93,7 @@ def check_imagery_available(lat: float, lon: float, api_key: str) -> Optional[st
     """
     params = {
         "location": f"{lat},{lon}",
-        "radius": 50,          # meters — stay near centroid
+        "radius": 50,  # meters — stay near centroid
         "key": api_key,
     }
     resp = _get_with_rate_limit(METADATA_API_URL, params)
@@ -133,6 +136,7 @@ def fetch_single_image(
 
 # ── Sampling strategy ───────────────────────────────────────────────────────────
 
+
 def sample_points_in_tract(
     tract_geometry,
     n_points: int = 8,
@@ -165,6 +169,7 @@ def sample_points_in_tract(
 
 
 # ── Main fetch loop ─────────────────────────────────────────────────────────────
+
 
 def fetch_tracts(
     tracts_path: str | Path,
@@ -201,14 +206,20 @@ def fetch_tracts(
     image_records: list[ImageRecord] = []
     coverage_records: list[TractCoverageRecord] = []
 
-    logger.info(f"Fetching Street View for {len(tracts)} tracts "
-                f"({images_per_tract} images/tract target)")
+    logger.info(
+        f"Fetching Street View for {len(tracts)} tracts "
+        f"({images_per_tract} images/tract target)"
+    )
 
     for _, row in tracts.iterrows():
         tract_id = str(row["tract_id"])
         tract_dir = output_dir / tract_id
 
-        if resume and tract_dir.exists() and len(list(tract_dir.glob("*.jpg"))) >= MIN_IMAGES_FOR_COVERAGE:
+        if (
+            resume
+            and tract_dir.exists()
+            and len(list(tract_dir.glob("*.jpg"))) >= MIN_IMAGES_FOR_COVERAGE
+        ):
             logger.debug(f"Skipping {tract_id} (already fetched)")
             continue
 
@@ -231,14 +242,16 @@ def fetch_tracts(
 
             if pano_id is None:
                 n_no_imagery += 1
-                image_records.append(ImageRecord(
-                    tract_id=tract_id,
-                    image_index=img_index,
-                    heading=-1,
-                    filename="",
-                    fetch_date=pd.Timestamp.now().isoformat(),
-                    status="no_imagery",
-                ))
+                image_records.append(
+                    ImageRecord(
+                        tract_id=tract_id,
+                        image_index=img_index,
+                        heading=-1,
+                        filename="",
+                        fetch_date=pd.Timestamp.now().isoformat(),
+                        status="no_imagery",
+                    )
+                )
                 img_index += 1
                 continue
 
@@ -259,15 +272,17 @@ def fetch_tracts(
                     status = "error"
                     n_errors += 1
 
-                image_records.append(ImageRecord(
-                    tract_id=tract_id,
-                    image_index=img_index,
-                    heading=heading,
-                    filename=filename if status == "ok" else "",
-                    fetch_date=pd.Timestamp.now().isoformat(),
-                    status=status,
-                    pano_id=pano_id,
-                ))
+                image_records.append(
+                    ImageRecord(
+                        tract_id=tract_id,
+                        image_index=img_index,
+                        heading=heading,
+                        filename=filename if status == "ok" else "",
+                        fetch_date=pd.Timestamp.now().isoformat(),
+                        status=status,
+                        pano_id=pano_id,
+                    )
+                )
                 img_index += 1
 
         # Coverage classification for bias audit
@@ -278,14 +293,16 @@ def fetch_tracts(
         else:
             flag = "full"
 
-        coverage_records.append(TractCoverageRecord(
-            tract_id=tract_id,
-            n_requested=len(sampling_points) * len(HEADINGS),
-            n_fetched=n_fetched,
-            n_no_imagery=n_no_imagery,
-            n_errors=n_errors,
-            coverage_flag=flag,
-        ))
+        coverage_records.append(
+            TractCoverageRecord(
+                tract_id=tract_id,
+                n_requested=len(sampling_points) * len(HEADINGS),
+                n_fetched=n_fetched,
+                n_no_imagery=n_no_imagery,
+                n_errors=n_errors,
+                coverage_flag=flag,
+            )
+        )
         logger.info(f"Tract {tract_id}: {n_fetched} images ({flag})")
 
     image_log_df = pd.DataFrame([asdict(r) for r in image_records])
@@ -311,8 +328,12 @@ def _log_coverage_summary(coverage_df: pd.DataFrame) -> None:
     logger.info("=" * 60)
     logger.info("STREET VIEW COVERAGE AUDIT")
     logger.info(f"  Total tracts: {total}")
-    logger.info(f"  Full coverage (>={MIN_IMAGES_FOR_COVERAGE} imgs): {full} ({100*full/total:.1f}%)")
-    logger.info(f"  Sparse (<{MIN_IMAGES_FOR_COVERAGE} imgs):         {sparse} ({100*sparse/total:.1f}%)")
+    logger.info(
+        f"  Full coverage (>={MIN_IMAGES_FOR_COVERAGE} imgs): {full} ({100*full/total:.1f}%)"
+    )
+    logger.info(
+        f"  Sparse (<{MIN_IMAGES_FOR_COVERAGE} imgs):         {sparse} ({100*sparse/total:.1f}%)"
+    )
     logger.info(f"  Missing (0 imgs):                {missing} ({100*missing/total:.1f}%)")
     if missing > 0:
         missing_ids = coverage_df[coverage_df["coverage_flag"] == "missing"]["tract_id"].tolist()
@@ -327,15 +348,22 @@ def _log_coverage_summary(coverage_df: pd.DataFrame) -> None:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Fetch Chicago Street View imagery by Census tract")
+    parser = argparse.ArgumentParser(
+        description="Fetch Chicago Street View imagery by Census tract"
+    )
     parser.add_argument("--api-key", required=True, help="Google Street View Static API key")
-    parser.add_argument("--tracts", default="data/processed/tract_centroids.geojson",
-                        help="Input GeoJSON with tract_id + geometry")
-    parser.add_argument("--output", default="data/raw/streetview/",
-                        help="Output directory for raw images")
+    parser.add_argument(
+        "--tracts",
+        default="data/processed/tract_centroids.geojson",
+        help="Input GeoJSON with tract_id + geometry",
+    )
+    parser.add_argument(
+        "--output", default="data/raw/streetview/", help="Output directory for raw images"
+    )
     parser.add_argument("--images-per-tract", type=int, default=PREFERRED_IMAGES_PER_TRACT)
-    parser.add_argument("--no-resume", action="store_true",
-                        help="Refetch all tracts even if already done")
+    parser.add_argument(
+        "--no-resume", action="store_true", help="Refetch all tracts even if already done"
+    )
     args = parser.parse_args()
 
     image_log, coverage = fetch_tracts(
@@ -345,6 +373,8 @@ if __name__ == "__main__":
         images_per_tract=args.images_per_tract,
         resume=not args.no_resume,
     )
-    print(f"\nFetched {image_log[image_log['status']=='ok'].shape[0]} images across "
-          f"{coverage[coverage['coverage_flag']=='full'].shape[0]} fully covered tracts.")
+    print(
+        f"\nFetched {image_log[image_log['status']=='ok'].shape[0]} images across "
+        f"{coverage[coverage['coverage_flag']=='full'].shape[0]} fully covered tracts."
+    )
     print("Coverage audit saved to data/audit/streetview_coverage.csv")

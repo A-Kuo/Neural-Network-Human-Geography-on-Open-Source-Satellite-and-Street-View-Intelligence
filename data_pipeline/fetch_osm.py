@@ -13,27 +13,26 @@ Usage:
     python fetch_osm.py --bbox chicago [--output data/raw/]
 """
 
-import time
 import json
+import time
 from pathlib import Path
 from typing import Optional
 
-import requests
 import geopandas as gpd
 import osmnx as ox
 import pandas as pd
-from shapely.geometry import shape, mapping
+import requests
 from loguru import logger
+from shapely.geometry import mapping, shape
 from tenacity import retry, stop_after_attempt, wait_exponential
-
 
 # ── Chicago bounding box (WGS84) ───────────────────────────────────────────────
 
 CHICAGO_BBOX = {
     "north": 42.023,
     "south": 41.644,
-    "east":  -87.524,
-    "west":  -87.940,
+    "east": -87.524,
+    "west": -87.940,
 }
 
 # Overpass API endpoint (public; no key needed)
@@ -42,6 +41,7 @@ OVERPASS_TIMEOUT = 120  # seconds — large queries need time
 
 
 # ── Overpass query helpers ──────────────────────────────────────────────────────
+
 
 def _bbox_str(bbox: dict) -> str:
     """Format bbox for Overpass QL: (south, west, north, east)."""
@@ -91,6 +91,7 @@ out body;
 
 # ── Overpass fetcher ────────────────────────────────────────────────────────────
 
+
 @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=2, min=5, max=60))
 def _overpass_fetch(query: str) -> dict:
     """POST query to Overpass API, return parsed JSON. Retries on failure."""
@@ -130,6 +131,7 @@ def _parse_overpass_buildings(osm_json: dict) -> gpd.GeoDataFrame:
             if len(coords) < 4:  # need at least a triangle + closing
                 continue
             from shapely.geometry import Polygon
+
             try:
                 geom = Polygon(coords)
                 if not geom.is_valid:
@@ -153,17 +155,20 @@ def _parse_overpass_buildings(osm_json: dict) -> gpd.GeoDataFrame:
             except ValueError:
                 pass
 
-        features.append({
-            "osm_id": el["id"],
-            "building_type": tags.get("building", "yes"),
-            "height_m": height_m,
-            "geometry": geom,
-        })
+        features.append(
+            {
+                "osm_id": el["id"],
+                "building_type": tags.get("building", "yes"),
+                "height_m": height_m,
+                "geometry": geom,
+            }
+        )
 
     if not features:
         logger.warning("No building polygons parsed from Overpass response.")
-        return gpd.GeoDataFrame(columns=["osm_id", "building_type", "height_m", "geometry"],
-                                crs="EPSG:4326")
+        return gpd.GeoDataFrame(
+            columns=["osm_id", "building_type", "height_m", "geometry"], crs="EPSG:4326"
+        )
 
     gdf = gpd.GeoDataFrame(features, crs="EPSG:4326")
     logger.info(f"Parsed {len(gdf)} building polygons from OSM.")
@@ -179,22 +184,25 @@ def _parse_overpass_transit_stops(osm_json: dict) -> gpd.GeoDataFrame:
         if el["type"] != "node":
             continue
         tags = el.get("tags", {})
-        features.append({
-            "osm_id": el["id"],
-            "name": tags.get("name", ""),
-            "stop_type": (
-                tags.get("railway") or
-                tags.get("public_transport") or
-                tags.get("highway", "unknown")
-            ),
-            "network": tags.get("network", ""),
-            "geometry": Point(el["lon"], el["lat"]),
-        })
+        features.append(
+            {
+                "osm_id": el["id"],
+                "name": tags.get("name", ""),
+                "stop_type": (
+                    tags.get("railway")
+                    or tags.get("public_transport")
+                    or tags.get("highway", "unknown")
+                ),
+                "network": tags.get("network", ""),
+                "geometry": Point(el["lon"], el["lat"]),
+            }
+        )
 
     if not features:
         logger.warning("No transit stops parsed from Overpass response.")
-        return gpd.GeoDataFrame(columns=["osm_id", "name", "stop_type", "network", "geometry"],
-                                crs="EPSG:4326")
+        return gpd.GeoDataFrame(
+            columns=["osm_id", "name", "stop_type", "network", "geometry"], crs="EPSG:4326"
+        )
 
     gdf = gpd.GeoDataFrame(features, crs="EPSG:4326")
     logger.info(f"Parsed {len(gdf)} transit stops from OSM.")
@@ -202,6 +210,7 @@ def _parse_overpass_transit_stops(osm_json: dict) -> gpd.GeoDataFrame:
 
 
 # ── Street network (osmnx) ──────────────────────────────────────────────────────
+
 
 def fetch_street_network(bbox: dict, output_path: Path, network_type: str = "all") -> None:
     """
@@ -229,6 +238,7 @@ def fetch_street_network(bbox: dict, output_path: Path, network_type: str = "all
 
 
 # ── Main ────────────────────────────────────────────────────────────────────────
+
 
 def fetch_all(
     bbox: dict = CHICAGO_BBOX,
@@ -287,8 +297,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Fetch Chicago OSM data layers")
     parser.add_argument("--output", default="data/raw/", help="Output directory")
-    parser.add_argument("--skip-street-network", action="store_true",
-                        help="Skip large street network download (speeds up testing)")
+    parser.add_argument(
+        "--skip-street-network",
+        action="store_true",
+        help="Skip large street network download (speeds up testing)",
+    )
     args = parser.parse_args()
 
     paths = fetch_all(

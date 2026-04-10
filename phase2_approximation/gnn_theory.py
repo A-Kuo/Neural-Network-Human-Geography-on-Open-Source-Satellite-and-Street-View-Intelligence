@@ -13,15 +13,18 @@ Reference:
 - Cybenko "Approximation by superpositions of sigmoidal functions" (1989)
 """
 
-import numpy as np
-import networkx as nx
 from collections import defaultdict
-from typing import Dict, List, Tuple, Set
+from typing import Dict, List, Set, Tuple
 
+import networkx as nx
+import numpy as np
 
 # ── Weisfeiler-Lehman Dimension ─────────────────────────────────────────────
 
-def weisfeiler_lehman_iteration(graph: nx.Graph, node_colors: Dict[int, int], iteration: int = 0) -> Dict[int, int]:
+
+def weisfeiler_lehman_iteration(
+    graph: nx.Graph, node_colors: Dict[int, int], iteration: int = 0
+) -> Dict[int, int]:
     """
     One iteration of the Weisfeiler-Lehman graph isomorphism test.
 
@@ -63,7 +66,9 @@ def weisfeiler_lehman_iteration(graph: nx.Graph, node_colors: Dict[int, int], it
     return new_colors
 
 
-def compute_wl_dimension(graph: nx.Graph, max_iterations: int = 10) -> Tuple[int, Dict[int, List[int]]]:
+def compute_wl_dimension(
+    graph: nx.Graph, max_iterations: int = 10
+) -> Tuple[int, Dict[int, List[int]]]:
     """
     Compute the Weisfeiler-Lehman dimension of a graph.
 
@@ -94,7 +99,7 @@ def compute_wl_dimension(graph: nx.Graph, max_iterations: int = 10) -> Tuple[int
     node_colors = {node: graph.degree(node) for node in graph.nodes()}
     color_history = {0: node_colors.copy()}
 
-    num_color_changes = float('inf')
+    num_color_changes = float("inf")
     wl_dimension = None
 
     for iteration in range(1, max_iterations + 1):
@@ -136,6 +141,7 @@ def count_node_classes_by_iteration(color_history: Dict[int, Dict[int, int]]) ->
 
 
 # ── Receptive Field Analysis ────────────────────────────────────────────────
+
 
 def receptive_field_by_depth(graph: nx.Graph, num_layers: int) -> Dict[int, float]:
     """
@@ -189,6 +195,7 @@ def distance_to_kilometers(distance_hops: float, avg_hop_distance_km: float = 0.
 
 # ── Function Space & Universal Approximation ────────────────────────────────
 
+
 def universal_approximation_bound(
     graph: nx.Graph,
     num_gnn_layers: int,
@@ -230,7 +237,7 @@ def universal_approximation_bound(
 
     # Actually use the provided hidden_dimension
     effective_width = hidden_dimension
-    effective_error = wl_dim / (effective_width ** num_gnn_layers + 1e-10)
+    effective_error = wl_dim / (effective_width**num_gnn_layers + 1e-10)
 
     return {
         "wl_dimension": wl_dim,
@@ -244,6 +251,7 @@ def universal_approximation_bound(
 
 
 # ── Multi-Scale Structure Detection ─────────────────────────────────────────
+
 
 def detect_multiscale_structure(
     graph: nx.Graph,
@@ -278,7 +286,7 @@ def detect_multiscale_structure(
     # Find "characteristic scale": hops where variance drops significantly
     characteristic_scale = None
     for i in range(1, len(variances)):
-        if variances[i] < 0.5 * variances[i-1]:  # 50% drop
+        if variances[i] < 0.5 * variances[i - 1]:  # 50% drop
             characteristic_scale = hops[i]
             break
 
@@ -298,6 +306,7 @@ def detect_multiscale_structure(
 
 
 # ── Practical Application: Chicago Tract Graph ──────────────────────────────
+
 
 def analyze_chicago_tract_graph_expressivity(
     chicago_tracts_gdf,
@@ -342,7 +351,8 @@ def analyze_chicago_tract_graph_expressivity(
         variances_at_hop = []
         for node in G.nodes():
             neighbors_at_hop = [
-                other for other in G.nodes()
+                other
+                for other in G.nodes()
                 if shortest_paths[node].get(other, np.inf) == hop_distance
             ]
             if neighbors_at_hop:
@@ -384,6 +394,7 @@ def analyze_chicago_tract_graph_expressivity(
 
 # ── Visualization Utilities ─────────────────────────────────────────────────
 
+
 def summarize_expressivity_analysis(analysis_dict: Dict) -> str:
     """
     Pretty-print the expressivity analysis for Chicago.
@@ -399,22 +410,22 @@ def summarize_expressivity_analysis(analysis_dict: Dict) -> str:
 
     output.append(f"\nWeisfeiler-Lehman Dimension: {analysis_dict['wl_dimension']}")
     output.append(f"  Node classes by iteration:")
-    for iter, count in sorted(analysis_dict['node_classes_by_iteration'].items()):
+    for iter, count in sorted(analysis_dict["node_classes_by_iteration"].items()):
         output.append(f"    Iteration {iter}: {count} distinct classes")
 
     output.append(f"\nIncome Variance by Hop Distance:")
-    for hop, var in sorted(analysis_dict['income_variance_by_hops'].items()):
+    for hop, var in sorted(analysis_dict["income_variance_by_hops"].items()):
         output.append(f"  {hop}-hops: variance = ${var:,.0f}")
 
     output.append(f"\nMulti-Scale Analysis:")
-    ma = analysis_dict['multiscale_analysis']
+    ma = analysis_dict["multiscale_analysis"]
     output.append(f"  Characteristic scale: {ma['characteristic_scale_hops']} hops")
     output.append(f"  Required GNN depth: {ma['required_gnn_depth_estimate']} layers")
     output.append(f"  Is multi-scale: {ma['is_multiscale']}")
 
     output.append(f"\nGNN Depth vs. Width Analysis:")
-    for depth, analysis in sorted(analysis_dict['width_analysis_by_depth'].items()):
-        est_error = analysis['estimated_error_bound']
+    for depth, analysis in sorted(analysis_dict["width_analysis_by_depth"].items()):
+        est_error = analysis["estimated_error_bound"]
         output.append(
             f"  {depth}-layer GNN: estimated error ≈ ${est_error*50000:,.0f} "
             f"(hidden_dim={analysis['hidden_dimension_provided']})"

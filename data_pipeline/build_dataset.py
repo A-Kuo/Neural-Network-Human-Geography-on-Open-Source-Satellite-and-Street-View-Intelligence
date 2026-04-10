@@ -39,11 +39,10 @@ import re
 from pathlib import Path
 from typing import Optional
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import geopandas as gpd
 from loguru import logger
-
 
 # ── Privacy guard ────────────────────────────────────────────────────────────────
 
@@ -55,10 +54,10 @@ PII_COLUMN_PATTERNS = [
     r"street_name",
     r"household_id",
     r"person_id",
-    r"name$",           # stop_name, person_name, etc.
+    r"name$",  # stop_name, person_name, etc.
 ]
 
-REQUIRED_MIN_IMAGES = 10   # Tracts with fewer images excluded from ML training
+REQUIRED_MIN_IMAGES = 10  # Tracts with fewer images excluded from ML training
 
 
 def _privacy_guard(df: pd.DataFrame) -> None:
@@ -76,9 +75,9 @@ def _privacy_guard(df: pd.DataFrame) -> None:
 
     if violations:
         raise ValueError(
-            "PRIVACY VIOLATION — dataset contains PII columns:\n" +
-            "\n".join(violations) +
-            "\n\nFix the pipeline before writing. See ETHICS.md for rules."
+            "PRIVACY VIOLATION — dataset contains PII columns:\n"
+            + "\n".join(violations)
+            + "\n\nFix the pipeline before writing. See ETHICS.md for rules."
         )
     logger.info("Privacy guard PASSED — no PII columns detected.")
 
@@ -97,8 +96,10 @@ def _verify_aggregation_level(df: pd.DataFrame, population_col: str = "total_pop
             f"  {len(small_tracts)} tracts have population < 1,000. "
             "These may be parks, airports, or data issues. Consider excluding."
         )
-    logger.info(f"Aggregation level OK: all rows are Census tracts "
-                f"(min pop: {df[population_col].min():.0f}).")
+    logger.info(
+        f"Aggregation level OK: all rows are Census tracts "
+        f"(min pop: {df[population_col].min():.0f})."
+    )
 
 
 def _verify_image_coverage(df: pd.DataFrame) -> pd.DataFrame:
@@ -115,8 +116,7 @@ def _verify_image_coverage(df: pd.DataFrame) -> pd.DataFrame:
     df["ml_eligible"] = df["n_images"] >= REQUIRED_MIN_IMAGES
     n_eligible = df["ml_eligible"].sum()
     n_total = len(df)
-    logger.info(f"ML-eligible tracts: {n_eligible}/{n_total} "
-                f"(>= {REQUIRED_MIN_IMAGES} images)")
+    logger.info(f"ML-eligible tracts: {n_eligible}/{n_total} " f"(>= {REQUIRED_MIN_IMAGES} images)")
     if n_eligible < n_total * 0.5:
         logger.warning(
             f"Only {100*n_eligible/n_total:.1f}% of tracts meet image threshold. "
@@ -126,6 +126,7 @@ def _verify_image_coverage(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ── Data loading helpers ────────────────────────────────────────────────────────
+
 
 def _load_parquet_or_none(path: Path) -> Optional[pd.DataFrame]:
     if path and path.exists():
@@ -147,11 +148,13 @@ def _load_csv_or_none(path: Path) -> Optional[pd.DataFrame]:
 
 # ── Transformation log ──────────────────────────────────────────────────────────
 
+
 class TransformationLog:
     """
     Audit trail for every join and transformation.
     Required for reproducibility: every row count change is logged.
     """
+
     def __init__(self):
         self.entries = []
 
@@ -171,6 +174,7 @@ class TransformationLog:
 
 
 # ── Build pipeline ───────────────────────────────────────────────────────────────
+
 
 def build(
     image_features_path: str | Path = "data/processed/tract_image_features.parquet",
@@ -203,52 +207,73 @@ def build(
 
     if cen_df is None:
         raise FileNotFoundError(
-            f"Census data required but not found: {census_path}\n"
-            "Run fetch_census.py first."
+            f"Census data required but not found: {census_path}\n" "Run fetch_census.py first."
         )
     log.log("load_census", cen_df, note="ACS tract-level income + demographics")
 
     # ── Start with census as the canonical tract list ───────────────────────────
     # This ensures every Cook County tract appears, regardless of other data availability
-    result = cen_df[["tract_id", "median_household_income", "total_population",
-                      "poverty_rate", "pct_no_vehicle", "pct_college_plus",
-                      "total_housing_units", "acs_year"]].copy()
+    result = cen_df[
+        [
+            "tract_id",
+            "median_household_income",
+            "total_population",
+            "poverty_rate",
+            "pct_no_vehicle",
+            "pct_college_plus",
+            "total_housing_units",
+            "acs_year",
+        ]
+    ].copy()
     result = result.rename(columns={"acs_year": "census_year"})
     log.log("base_census", result, "All Cook County tracts from ACS")
 
     # ── Join image features ────────────────────────────────────────────────────
     if img_df is not None:
         # Drop any location columns that snuck through
-        img_safe = img_df.drop(columns=[c for c in img_df.columns
-                                         if re.search(r"lat|lon|address", c, re.IGNORECASE)
-                                         and c != "tract_id"], errors="ignore")
+        img_safe = img_df.drop(
+            columns=[
+                c
+                for c in img_df.columns
+                if re.search(r"lat|lon|address", c, re.IGNORECASE) and c != "tract_id"
+            ],
+            errors="ignore",
+        )
         result = result.merge(img_safe, on="tract_id", how="left")
-        log.log("join_image_features", result,
-                f"Joined {len(img_safe.columns)-1} image feature columns")
+        log.log(
+            "join_image_features", result, f"Joined {len(img_safe.columns)-1} image feature columns"
+        )
     else:
         result["n_images"] = 0
         logger.warning("Image features not available — run extract_features.py first.")
 
     # ── Join building stats ────────────────────────────────────────────────────
     if bld_df is not None:
-        bld_safe = bld_df.drop(columns=["geometry"] if "geometry" in bld_df.columns else [],
-                                errors="ignore")
+        bld_safe = bld_df.drop(
+            columns=["geometry"] if "geometry" in bld_df.columns else [], errors="ignore"
+        )
         result = result.merge(bld_safe, on="tract_id", how="left")
         log.log("join_building_stats", result, "Joined OSM building features")
 
     # ── Join transit features ──────────────────────────────────────────────────
     if trt_df is not None:
         # Drop any coordinate columns
-        trt_safe = trt_df.drop(columns=[c for c in trt_df.columns
-                                         if re.search(r"lat|lon", c, re.IGNORECASE)
-                                         and c != "tract_id"], errors="ignore")
+        trt_safe = trt_df.drop(
+            columns=[
+                c
+                for c in trt_df.columns
+                if re.search(r"lat|lon", c, re.IGNORECASE) and c != "tract_id"
+            ],
+            errors="ignore",
+        )
         result = result.merge(trt_safe, on="tract_id", how="left")
         log.log("join_transit_features", result, "Joined GTFS transit accessibility features")
 
     # ── Privacy guard ──────────────────────────────────────────────────────────
     # Remove NAME column (human-readable tract names — not strictly PII but unnecessary)
-    result = result.drop(columns=[c for c in result.columns if c.upper() == "NAME"],
-                         errors="ignore")
+    result = result.drop(
+        columns=[c for c in result.columns if c.upper() == "NAME"], errors="ignore"
+    )
 
     _privacy_guard(result)
     log.log("privacy_guard_passed", result, "No PII columns detected")
@@ -275,7 +300,9 @@ def build(
 
     # ── Save ────────────────────────────────────────────────────────────────────
     result.to_parquet(output_path, index=False)
-    logger.info(f"Final dataset saved: {len(result)} tracts × {len(result.columns)} cols → {output_path}")
+    logger.info(
+        f"Final dataset saved: {len(result)} tracts × {len(result.columns)} cols → {output_path}"
+    )
 
     # Save transformation log
     audit_dir = Path("data/audit")
@@ -287,11 +314,15 @@ def build(
     logger.info(f"  Tracts:          {len(result)}")
     logger.info(f"  ML-eligible:     {result.get('ml_eligible', pd.Series(False)).sum()}")
     if "median_household_income" in result.columns:
-        logger.info(f"  Income range:    ${result['median_household_income'].min():,.0f} – "
-                    f"${result['median_household_income'].max():,.0f}")
+        logger.info(
+            f"  Income range:    ${result['median_household_income'].min():,.0f} – "
+            f"${result['median_household_income'].max():,.0f}"
+        )
     if "transit_score" in result.columns:
-        logger.info(f"  Transit score:   {result['transit_score'].min():.1f} – "
-                    f"{result['transit_score'].max():.1f}")
+        logger.info(
+            f"  Transit score:   {result['transit_score'].min():.1f} – "
+            f"{result['transit_score'].max():.1f}"
+        )
 
     return result
 
@@ -304,7 +335,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Build final joined dataset (tract-level, no PII)")
     parser.add_argument("--image-features", default="data/processed/tract_image_features.parquet")
     parser.add_argument("--building-stats", default="data/processed/tract_building_stats.parquet")
-    parser.add_argument("--transit-features", default="data/processed/tract_transit_features.parquet")
+    parser.add_argument(
+        "--transit-features", default="data/processed/tract_transit_features.parquet"
+    )
     parser.add_argument("--census", default="data/raw/census/acs_2022_cook_county.csv")
     parser.add_argument("--output", default="data/processed/final_dataset.parquet")
     args = parser.parse_args()
@@ -317,5 +350,17 @@ if __name__ == "__main__":
         output_path=args.output,
     )
     print(f"\nFinal dataset: {dataset.shape}")
-    print(dataset[["tract_id", "median_household_income", "transit_score",
-                   "building_density_km2", "n_images", "ml_eligible"]].head(10).to_string())
+    print(
+        dataset[
+            [
+                "tract_id",
+                "median_household_income",
+                "transit_score",
+                "building_density_km2",
+                "n_images",
+                "ml_eligible",
+            ]
+        ]
+        .head(10)
+        .to_string()
+    )

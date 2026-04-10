@@ -21,29 +21,28 @@ Usage:
         [--batch-size 32] [--device cuda]
 """
 
-import os
 import gc
 import json
+import os
 import time
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader
-from torchvision import models, transforms
-from PIL import Image
 from loguru import logger
-
+from PIL import Image
+from torch.utils.data import DataLoader, Dataset
+from torchvision import models, transforms
 
 # ── Constants ───────────────────────────────────────────────────────────────────
 
-RESNET_FEATURE_DIM = 2048      # ResNet-152 penultimate layer output
-MIN_IMAGES_PER_TRACT = 10      # Minimum for privacy/reliability (see ethics rules)
-IMAGE_SIZE = (224, 224)        # ResNet input size
+RESNET_FEATURE_DIM = 2048  # ResNet-152 penultimate layer output
+MIN_IMAGES_PER_TRACT = 10  # Minimum for privacy/reliability (see ethics rules)
+IMAGE_SIZE = (224, 224)  # ResNet input size
 
 # ImageNet normalization (ResNet was trained on ImageNet)
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -52,12 +51,14 @@ IMAGENET_STD = [0.229, 0.224, 0.225]
 
 # ── Image preprocessing ─────────────────────────────────────────────────────────
 
-IMAGE_TRANSFORM = transforms.Compose([
-    transforms.Resize(256),
-    transforms.CenterCrop(IMAGE_SIZE),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-])
+IMAGE_TRANSFORM = transforms.Compose(
+    [
+        transforms.Resize(256),
+        transforms.CenterCrop(IMAGE_SIZE),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+    ]
+)
 
 
 class TractImageDataset(Dataset):
@@ -88,6 +89,7 @@ class TractImageDataset(Dataset):
 
 # ── Model setup ─────────────────────────────────────────────────────────────────
 
+
 def load_resnet152(device: str = "cpu") -> nn.Module:
     """
     Load pretrained ResNet-152. Remove final classification layer to get embeddings.
@@ -105,6 +107,7 @@ def load_resnet152(device: str = "cpu") -> nn.Module:
 
 
 # ── Feature extraction ──────────────────────────────────────────────────────────
+
 
 @torch.no_grad()
 def extract_tract_features(
@@ -127,7 +130,7 @@ def extract_tract_features(
     all_features = []
     for batch_tensors, _ in loader:
         batch_tensors = batch_tensors.to(device)
-        features = model(batch_tensors)              # (batch, 2048)
+        features = model(batch_tensors)  # (batch, 2048)
         all_features.append(features.cpu().numpy())
         del batch_tensors, features
         gc.collect()
@@ -156,6 +159,7 @@ def _delete_tract_images(image_paths: list[Path], dry_run: bool = False) -> int:
 
 # ── Aggregation ─────────────────────────────────────────────────────────────────
 
+
 def aggregate_tract_features(features: np.ndarray) -> dict:
     """
     Aggregate per-image features to tract-level statistics.
@@ -167,13 +171,14 @@ def aggregate_tract_features(features: np.ndarray) -> dict:
     Returns dict with mean and std of each feature dimension.
     """
     return {
-        "mean": features.mean(axis=0),   # (2048,)
-        "std": features.std(axis=0),     # (2048,)
+        "mean": features.mean(axis=0),  # (2048,)
+        "std": features.std(axis=0),  # (2048,)
         "n_images": len(features),
     }
 
 
 # ── Main extraction loop ────────────────────────────────────────────────────────
+
 
 def extract_all(
     image_dir: str | Path,
@@ -236,14 +241,18 @@ def extract_all(
             continue
 
         if len(image_paths) < MIN_IMAGES_PER_TRACT:
-            logger.info(f"Tract {tract_id}: only {len(image_paths)} images "
-                        f"(< {MIN_IMAGES_PER_TRACT} minimum) — skipping (sparse).")
-            summary_records.append({
-                "tract_id": tract_id,
-                "n_images": len(image_paths),
-                "status": "sparse_skipped",
-                "extraction_date": extraction_date,
-            })
+            logger.info(
+                f"Tract {tract_id}: only {len(image_paths)} images "
+                f"(< {MIN_IMAGES_PER_TRACT} minimum) — skipping (sparse)."
+            )
+            summary_records.append(
+                {
+                    "tract_id": tract_id,
+                    "n_images": len(image_paths),
+                    "status": "sparse_skipped",
+                    "extraction_date": extraction_date,
+                }
+            )
             continue
 
         logger.info(f"Tract {tract_id}: extracting features from {len(image_paths)} images...")
@@ -251,12 +260,14 @@ def extract_all(
             features = extract_tract_features(image_paths, model, device, batch_size)
         except Exception as e:
             logger.error(f"Tract {tract_id}: extraction failed — {e}")
-            summary_records.append({
-                "tract_id": tract_id,
-                "n_images": len(image_paths),
-                "status": f"error: {e}",
-                "extraction_date": extraction_date,
-            })
+            summary_records.append(
+                {
+                    "tract_id": tract_id,
+                    "n_images": len(image_paths),
+                    "status": f"error: {e}",
+                    "extraction_date": extraction_date,
+                }
+            )
             continue
 
         if features is None:
@@ -281,20 +292,23 @@ def extract_all(
         with open(meta_path, "w") as f:
             json.dump(meta, f, indent=2)
 
-        summary_records.append({
-            "tract_id": tract_id,
-            "n_images": int(agg["n_images"]),
-            "status": "ok",
-            "extraction_date": extraction_date,
-        })
+        summary_records.append(
+            {
+                "tract_id": tract_id,
+                "n_images": int(agg["n_images"]),
+                "status": "ok",
+                "extraction_date": extraction_date,
+            }
+        )
 
         # ETHICS RULE: Delete original images NOW
         if delete_after_extraction:
             n_deleted = _delete_tract_images(image_paths, dry_run=dry_run)
             logger.debug(f"  Ethics: deleted {n_deleted} source images for tract {tract_id}.")
 
-        logger.info(f"  → {tract_id}: {agg['n_images']} images, "
-                    f"features saved to {output_npy.name}")
+        logger.info(
+            f"  → {tract_id}: {agg['n_images']} images, " f"features saved to {output_npy.name}"
+        )
 
     # Build aggregate features DataFrame (tract-level means for joining)
     logger.info("Building tract-level aggregate feature table...")
@@ -335,23 +349,35 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Extract ResNet-152 features from Street View images"
     )
-    parser.add_argument("--image-dir", default="data/raw/streetview/",
-                        help="Root dir of fetched images (tract subdirs)")
-    parser.add_argument("--output-dir", default="data/processed/image_features/",
-                        help="Output dir for .npy feature arrays")
-    parser.add_argument("--device", default="cpu",
-                        choices=["cpu", "cuda", "mps"],
-                        help="Compute device")
+    parser.add_argument(
+        "--image-dir",
+        default="data/raw/streetview/",
+        help="Root dir of fetched images (tract subdirs)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="data/processed/image_features/",
+        help="Output dir for .npy feature arrays",
+    )
+    parser.add_argument(
+        "--device", default="cpu", choices=["cpu", "cuda", "mps"], help="Compute device"
+    )
     parser.add_argument("--batch-size", type=int, default=32)
-    parser.add_argument("--no-delete", action="store_true",
-                        help="DANGER: Retain original images (ethics violation unless justified)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Simulate image deletion without actually deleting")
+    parser.add_argument(
+        "--no-delete",
+        action="store_true",
+        help="DANGER: Retain original images (ethics violation unless justified)",
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Simulate image deletion without actually deleting"
+    )
     args = parser.parse_args()
 
     if args.no_delete:
-        logger.warning("--no-delete set: images WILL be retained. "
-                       "Document your ethics justification in ETHICS.md.")
+        logger.warning(
+            "--no-delete set: images WILL be retained. "
+            "Document your ethics justification in ETHICS.md."
+        )
 
     summary = extract_all(
         image_dir=args.image_dir,
