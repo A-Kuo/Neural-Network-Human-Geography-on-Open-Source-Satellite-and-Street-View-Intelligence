@@ -1,0 +1,66 @@
+# Data directories — raw and processed data are reproducible from sources
+data/raw/
+data/processed/
+# Keep audit outputs and .gitkeep markers
+!data/audit/
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# API keys and secrets
+.env
+*.env
+config/secrets.yaml
+config/secrets.json
+
+# Street View images (deleted after feature extraction per ethics rules)
+**/*.jpg
+**/*.jpeg
+**/*.png
+!figures/**
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.nbconvert
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Model weights (large; tracked separately if needed)
+*.pt
+*.pth
+*.pkl
+*.h5
+*.onnx
+
+# Logs
+logs/
+*.log
+
+# Coverage
+.coverage
+htmlcov/
