@@ -25,12 +25,30 @@
 - ✅ `pipeline/processors/__init__.py`
 - ✅ `pipeline/processors/base.py` with BaseProcessor class
 
-### Data Fetchers (Partial)
+### Data Fetchers (Complete ✅)
 - ✅ `pipeline/fetchers/census.py` — CensusFetcher class
   - Refactored from data_pipeline/fetch_census.py
   - Implements DataFetcher ABC
   - Uses Config system for parameters
   - Handles tract geometries + ACS variables + audits
+
+- ✅ `pipeline/fetchers/osm.py` — OSMFetcher class
+  - Refactored from data_pipeline/fetch_osm.py
+  - Fetches buildings, streets, transit stops via Overpass API
+  - Retries with exponential backoff
+  - Parses GeoJSON/GraphML outputs
+
+- ✅ `pipeline/fetchers/gtfs.py` — GTFSFetcher class
+  - Refactored from data_pipeline/fetch_gtfs.py
+  - Downloads CTA + Metra GTFS schedules
+  - Validates stops, estimates travel times to Loop
+  - Handles GTFS time format (including >24:00)
+
+- ✅ `pipeline/fetchers/streetview.py` — StreetViewFetcher class
+  - Refactored from data_pipeline/fetch_streetview.py
+  - Rate-limited image fetching (1 req/sec)
+  - Coverage audit with sparse/missing flagging
+  - Privacy-enforcing (no lat/lon in filenames)
 
 ### Test Import
 - ✅ Package imports successfully as `from gnn_geography import Config, DataFetcher, ...`
@@ -40,21 +58,8 @@
 
 ## In Progress 🔄
 
-### Remaining Data Fetchers (To be completed)
-- [ ] `pipeline/fetchers/osm.py` — OSMFetcher class
-  - Fetch: OpenStreetMap buildings, streets, transit stops
-  - Source: data_pipeline/fetch_osm.py
-  - Estimated: 30 min
-
-- [ ] `pipeline/fetchers/gtfs.py` — GTFSFetcher class
-  - Fetch: CTA + Metra GTFS schedules
-  - Source: data_pipeline/fetch_gtfs.py
-  - Estimated: 30 min
-
-- [ ] `pipeline/fetchers/streetview.py` — StreetViewFetcher class
-  - Fetch: Google Street View imagery
-  - Source: data_pipeline/fetch_streetview.py
-  - Estimated: 30 min
+### Remaining Data Fetchers
+- ✅ All fetchers completed and committed
 
 ### Data Processors (To be completed)
 - [ ] `pipeline/processors/osm_cleaner.py` — OSMProcessor
@@ -179,11 +184,11 @@
 | Phase | Task | Duration | Status |
 |-------|------|----------|--------|
 | 1.1 | Core infrastructure | 2-3 hours | ✅ Complete |
-| 1.2 | Refactor fetchers | 1.5 hours | 🔄 In progress |
-| 1.3 | Refactor processors | 1.5 hours | ⏳ Pending |
+| 1.2 | Refactor fetchers | 1.5 hours | ✅ Complete |
+| 1.3 | Refactor processors | 1.5 hours | 🔄 In progress |
 | 1.4 | Orchestrator | 1.5-2 hours | ⏳ Pending |
 | 1.5 | Testing & migration | 1-2 hours | ⏳ Pending |
-| **Total** | **Phase 1** | **7-10 hours** | **~40% complete** |
+| **Total** | **Phase 1** | **7-10 hours** | **~50% complete** |
 
 ---
 
@@ -234,4 +239,4 @@
 
 ---
 
-**Status Summary:** Foundation laid. Ready for systematic refactoring of remaining modules. Estimated 6-8 hours to complete Phase 1.
+**Status Summary:** Foundation + all fetchers complete (4-5 hours elapsed). Processors next. On track for Phase 1 completion in 7-10 hours total.
