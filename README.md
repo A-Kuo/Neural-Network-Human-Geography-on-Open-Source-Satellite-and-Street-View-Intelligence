@@ -1,5 +1,30 @@
 # Topological Foundations of Neural Network Expressivity in Human Geographic Analysis
 
+![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python) ![PyTorch](https://img.shields.io/badge/PyTorch-2.x-red?logo=pytorch) ![PyG](https://img.shields.io/badge/PyTorch%20Geometric-GNNs-orange) ![Docker](https://img.shields.io/badge/Docker-reproducible-blue?logo=docker) ![Status](https://img.shields.io/badge/Status-Research%20Prototype-yellow)
+
+> **Maps socioeconomic structure from open satellite/street-view imagery, OSM, and transit data — and uses it to test *why* deep networks beat shallow ones on multi-scale geography.**
+
+## Problem
+
+Socioeconomic mapping from imagery usually stops at "the CNN predicts income, R² = X." This project asks the harder question underneath: geographic signal lives at multiple spatial scales (block → neighborhood → city), and there are theoretical reasons (Weisfeiler-Lehman bounds) to believe shallow GNNs *cannot* integrate across them. Chicago — with its sharp transit-accessibility and income gradients — is the testbed, built entirely from open data with tract-level privacy enforced in code.
+
+## Approach
+
+```
+Street View imagery ─► ResNet-152 embeddings (originals deleted — ethics)
+OpenStreetMap       ─► building footprints/height → tract aggregates
+CTA/Metra GTFS      ─► multi-scale transit accessibility features
+US Census ACS       ─► income/poverty/education targets
+        │
+        ▼
+Privacy-validated tract-level dataset (n≈800 Chicago tracts, no lat/lon)
+        │
+        ▼
+Shallow (1–2 layer) vs. deep (6–8 layer) GNN/CNN comparison
++ topological analysis of what each depth can express
+```
+
+
 **Research Question:** How does neural network depth affect learning of multi-scale geographic patterns in Chicago transit infrastructure and neighborhood economics? Can we prove that shallow networks fail to capture hierarchical spatial structure that deep networks learn?
 
 **Dataset:** Chicago Census tracts (n≈800) with Street View imagery, OpenStreetMap buildings, CTA/Metra transit network (GTFS), and US Census income data.
@@ -254,3 +279,31 @@ For questions on data, ethics, or research direction, see `ETHICS.md` for contac
 
 **Last updated:** 2026-04-10  
 **Reproducible with:** Python 3.11+, Docker
+
+
+---
+
+## Evaluation Design
+
+Research in progress — numbers land as Phases 2–3 complete. The comparisons are fixed in advance so results can't be cherry-picked:
+
+| Question | Test | Metric |
+|----------|------|--------|
+| Does depth matter on synthetic multi-scale tasks? | shallow vs. deep GNN on constructed hierarchies (Phase 2) | accuracy plateau gap |
+| Does depth matter on real geography? | 1–2 layer vs. 6–8 layer GNN predicting tract income (Phase 3) | R² / MAE vs. tract-feature baseline |
+| Is the mechanism transit accessibility? | representation probing of learned embeddings | transit–income alignment in deep features |
+| Are the theory claims sound? | WL-bound and Baire-category arguments (Phase 4) | formal proofs in `proofs/` |
+
+## Tech Stack
+
+- **ML**: PyTorch, PyTorch Geometric (GNNs), ResNet-152 feature extraction
+- **Geo/Data**: GeoPandas, OSMnx/Overpass, GTFS parsing, Census API, pandas/pyarrow
+- **Rigor**: pytest pipeline tests, per-tract coverage audits, Docker environment, ETHICS.md
+
+## Status
+
+🔬 Research prototype. Data pipeline and Phase 1 (topology foundations) complete; Phase 2 (approximation theory + synthetic depth experiments) in progress. Every data layer has a coverage/bias audit before modeling conclusions are drawn.
+
+## Author
+
+**Austin Kuo** | [GitHub](https://github.com/A-Kuo) | ML Engineer & Data Engineer
